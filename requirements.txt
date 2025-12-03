@@ -3,6 +3,3 @@ pandas
 numpy
 scikit-learn
 category-encoders
-joblib
-matplotlib
-seaborn
