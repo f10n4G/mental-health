@@ -5,131 +5,149 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from category_encoders.target_encoder import TargetEncoder
 from sklearn.ensemble import RandomForestClassifier
 
+
 st.title("🧠 Mental Health Depression Prediction App")
-st.write("Silakan upload dataset (CSV) terlebih dahulu jika belum otomatis terbaca.")
+st.write("Upload dataset terlebih dahulu agar model dapat mempelajari pola data.")
 
 
-# ======================================================
-# 📌 STEP 1: LOAD DATASET (Auto / Manual Upload)
-# ======================================================
+# ==========================
+# 📌 STEP 1: LOAD / UPLOAD DATASET
+# ==========================
+file_upload = st.file_uploader("Upload student_depression_dataset.csv", type=["csv"])
 
-csv_file = "student_depression_dataset.csv"
-
-try:
-    df = pd.read_csv(csv_file)
-    st.success("📁 Dataset ditemukan otomatis!")
-except:
-    st.warning("⚠ Dataset tidak ditemukan. Upload file CSV di bawah ini.")
-    file_upload = st.file_uploader("Upload student_depression_dataset.csv", type=["csv"])
-    
-    if file_upload:
-        df = pd.read_csv(file_upload)
-        st.success("📁 Dataset berhasil diupload!")
-    else:
-        st.stop()  # berhenti sampai file ada
+if file_upload:
+    df = pd.read_csv(file_upload)
+    st.success("📁 Dataset berhasil di-load!")
+else:
+    st.warning("⚠ Harap upload file dataset sebelum lanjut.")
+    st.stop()
 
 
-# ======================================================
-# 📌 PREPROCESSING FUNCTION
-# ======================================================
+# ==========================
+# 📌 STEP 2: CLEANING + ENCODING SETUP
+# ==========================
 
-def preprocess(data, df_ref):
+# Drop column yang tidak dipakai
+drop_cols = ['Work Pressure', 'Job Satisfaction']
+df = df.drop(columns=[col for col in drop_cols if col in df.columns])
 
-    df_copy = df_ref.copy()
+# Mapping ordinal fixed values
+ordinal_mapping = {
+    "Sleep Duration": {
+        "Less than 5 hours": 1,
+        "5-6 hours": 2,
+        "7-8 hours": 3,
+        "More than 8 hours": 4,
+        "Others": 0
+    },
+    "Financial Stress": {str(i): i for i in range(1, 6)},
+    "Have you ever had suicidal thoughts ?": {"No": 0, "Yes": 1},
+    "Family History of Mental Illness": {"No": 0, "Yes": 1}
+}
 
-    # -------- Drop Columns --------
-    drop_cols = ['Work Pressure', 'Job Satisfaction']
-    df_copy = df_copy.drop(columns=drop_cols)
 
-    # -------- Encoding Rules --------
-    ordinal_mapping = {
-        "Sleep Duration": {
-            "Less than 5 hours": 1,
-            "5-6 hours": 2,
-            "7-8 hours": 3,
-            "More than 8 hours": 4,
-            "Others": 0
-        },
-        "Financial Stress": {
-            "1.0": 1, "2.0": 2, "3.0": 3, "4.0": 4, "5.0": 5, "?": 0
-        },
-        "Have you ever had suicidal thoughts ?": {"No": 0, "Yes": 1},
-        "Family History of Mental Illness": {"No": 0, "Yes": 1}
-    }
-
+def apply_ordinal(df):
+    df_copy = df.copy()
     for col, mapping in ordinal_mapping.items():
-        data[col] = mapping.get(data[col], 0)
+        if col in df_copy.columns:
+            df_copy[col] = df_copy[col].astype(str).map(mapping).fillna(0)
+    return df_copy
 
-    # Label Encoding
-    label_cols = ['Gender', 'Dietary Habits', 'Degree']
 
-    for col in label_cols:
+df = apply_ordinal(df)
+
+
+# Label Encoding
+label_cols = ['Gender', 'Dietary Habits', 'Degree']
+label_encoders = {}
+
+for col in label_cols:
+    if col in df.columns:
         le = LabelEncoder()
-        df_copy[col] = df_copy[col].astype(str)
-        le.fit(df_copy[col])
-        data[col] = le.transform([str(data[col])])[0]
-
-    # Target Encoding
-    target_cols = ['City', 'Profession']
-    te = TargetEncoder()
-    df_copy[target_cols] = te.fit_transform(df_copy[target_cols], df_copy["Depression"])
-
-    for col in target_cols:
-        data[col] = te.transform(pd.DataFrame({col: [data[col]]}))[col][0]
-
-    # Convert to DF
-    df_input = pd.DataFrame([data])
-
-    # Scaling
-    scaler = StandardScaler()
-    numeric_features = df_input.columns
-    df_input[numeric_features] = scaler.fit_transform(df_input[numeric_features])
-
-    return df_input
+        df[col] = le.fit_transform(df[col].astype(str))
+        label_encoders[col] = le
 
 
-# ======================================================
-# 📌 TRAIN MODEL (Menggunakan dataset yg ada)
-# ======================================================
+# Target Encoding
+target_cols = ['City', 'Profession']
+te = TargetEncoder()
 
-model = RandomForestClassifier()
-model.fit(
-    preprocess(df.drop(columns=["Depression"]).iloc[0].to_dict(), df),
-    df["Depression"]
-)
+if set(target_cols).issubset(df.columns):
+    df[target_cols] = te.fit_transform(df[target_cols], df["Depression"])
 
 
-# ======================================================
-# 📌 STREAMLIT INPUT FORM UI
-# ======================================================
+# Scaling
+scaler = StandardScaler()
+feature_cols = [col for col in df.columns if col != "Depression"]
+df_scaled = df.copy()
+df_scaled[feature_cols] = scaler.fit_transform(df_scaled[feature_cols])
 
-st.subheader("🧾 Masukkan Data Anda")
 
-form = {}
+# ==========================
+# 📌 STEP 3: Train Model Once
+# ==========================
 
-for col in df.columns:
-    if col == "Depression":
-        continue
-    elif df[col].dtype == "object":
-        form[col] = st.selectbox(col, sorted(df[col].dropna().unique()))
+model = RandomForestClassifier(random_state=42)
+model.fit(df_scaled[feature_cols], df_scaled["Depression"])
+
+
+# ==========================
+# 📌 STEP 4: UI INPUT FORM
+# ==========================
+
+st.subheader("🧾 Masukkan data untuk prediksi:")
+
+input_data = {}
+
+for col in feature_cols:
+    if df[col].dtype == "object":
+        input_data[col] = st.selectbox(col, sorted(df[col].unique()))
+    elif col in ordinal_mapping:
+        input_data[col] = st.selectbox(col, list(ordinal_mapping[col].keys()))
     else:
-        form[col] = st.number_input(col, value=float(df[col].mean()))
+        input_data[col] = st.number_input(col, value=float(df[col].mean()))
 
 
-# ======================================================
-# 📌 PREDICT BUTTON
-# ======================================================
+# ==========================
+# 📌 STEP 5: Convert User Input → Model Format
+# ==========================
+
+def preprocess_user_input(data_dict):
+
+    data = pd.DataFrame([data_dict])
+
+    # Apply ordinal encoding
+    data = apply_ordinal(data)
+
+    # Apply label encoding
+    for col, encoder in label_encoders.items():
+        if col in data.columns:
+            data[col] = encoder.transform([str(data[col].values[0])])[0]
+
+    # Apply target encoding
+    for col in target_cols:
+        if col in data.columns:
+            data[col] = te.transform(pd.DataFrame({col: [data[col].values[0]]}))[col][0]
+
+    # Apply scaling
+    data[feature_cols] = scaler.transform(data[feature_cols])
+
+    return data
+
+
+# ==========================
+# 📌 STEP 6: Predict
+# ==========================
 
 if st.button("🔍 Predict"):
+    user_processed = preprocess_user_input(input_data.copy())
+    pred = model.predict(user_processed)[0]
 
-    processed = preprocess(form.copy(), df)
-    result = model.predict(processed)[0]
-
-    if result == 1:
-        st.error("⚠️ Kamu menunjukkan indikasi depresi. Pertimbangkan bantuan profesional.")
+    if pred == 1:
+        st.error("⚠️ Kamu menunjukkan indikasi depresi. Pertimbangkan dukungan profesional.")
     else:
-        st.success("💚 Kamu tidak menunjukkan tanda depresi. Tetap jaga kesehatan mental!")
+        st.success("💚 Tidak ada indikasi depresi berdasarkan inputmu. Tetap jaga kesehatan mental ya!")
 
 
 st.write("---")
-st.caption("Model ini bukan diagnosis medis. Untuk kondisi serius, hubungi profesional kesehatan mental.")
+st.caption("⚠️ Model ini hanya alat estimasi dan tidak menggantikan diagnosis medis.")
