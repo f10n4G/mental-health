@@ -65,33 +65,26 @@ for col in label_cols:
         le = LabelEncoder()
         df[col] = le.fit_transform(df[col].astype(str))
         label_encoders[col] = le
-        mode_values[col] = df[col].mode()[0]  # backup value if unseen later
+        mode_values[col] = df[col].mode()[0]
 
 
-# Target Encoding
 target_cols = ['City', 'Profession']
 te = TargetEncoder()
 df[target_cols] = te.fit_transform(df[target_cols], df["Depression"])
 
 
-# Scaling
 scaler = StandardScaler()
 feature_cols = [col for col in df.columns if col != "Depression"]
-
 df_scaled = df.copy()
 df_scaled[feature_cols] = scaler.fit_transform(df_scaled[feature_cols])
 
-
-# ==========================
-# 📌 Train Model Once
-# ==========================
 
 model = RandomForestClassifier(random_state=42)
 model.fit(df_scaled[feature_cols], df_scaled["Depression"])
 
 
 # ==========================
-# 📌 Input Form
+# 📌 Form Input Users
 # ==========================
 
 st.subheader("Masukkan data untuk prediksi:")
@@ -110,7 +103,7 @@ for col in feature_cols:
 
 
 # ==========================
-# 📌 Process + Predict
+# 📌 Preprocess User Input
 # ==========================
 
 def preprocess_input(data):
@@ -121,21 +114,20 @@ def preprocess_input(data):
     for col, encoder in label_encoders.items():
         if col in data.columns:
             val = str(data[col].values[0])
+            data[col] = encoder.transform([val])[0] if val in encoder.classes_ else mode_values[col]
 
-            if val in encoder.classes_:
-                data[col] = encoder.transform([val])[0]
-            else:
-                # Handle unseen value safely
-                data[col] = mode_values[col]
-
-    # Target Encoding
-    for col in target_cols:
-        data[col] = te.transform(pd.DataFrame({col: [data[col].values[0]]}))[col][0]
+    # 🔥 FIX: Transform BOTH target columns at once
+    if set(target_cols).issubset(data.columns):
+        data[target_cols] = te.transform(data[target_cols])
 
     data[feature_cols] = scaler.transform(data[feature_cols])
 
     return data
 
+
+# ==========================
+# 📌 Predict
+# ==========================
 
 if st.button("🔍 Predict"):
     processed = preprocess_input(user_input.copy())
