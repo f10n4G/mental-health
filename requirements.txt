@@ -1,4 +1,6 @@
+numpy
+pandas
+scikit-learn
 joblib
 streamlit
-scikit-learn
-pandas
+category_encoders
