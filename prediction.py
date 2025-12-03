@@ -1,5 +1,14 @@
+import gdown
+import os
 import joblib
-import pandas as pd
+
+MODEL_PATH = "depression_model.pkl"
+
+if not os.path.exists(MODEL_PATH):
+    url = "https://drive.google.com/file/d/1xQj2oRkAcQVZXYcUP1LFwHaYlOyViykZ/view?usp=sharing"
+    gdown.download(url, MODEL_PATH, quiet=False)
+
+model = joblib.load(MODEL_PATH)
 
 # Load model & encoders
 model = joblib.load("depression_model.pkl")
@@ -46,3 +55,4 @@ def predict_depression(input_dict):
     result = "Depression Detected" if prediction == 1 else "No Depression"
     
     return result, round(float(prob) * 100, 2)
+
