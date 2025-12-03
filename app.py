@@ -1,26 +1,41 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
-
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from category_encoders.target_encoder import TargetEncoder
 from sklearn.ensemble import RandomForestClassifier
 
-
-# ==========================
-# 🔧 Load Dataset for Encoding Reference
-# ==========================
-df = pd.read_csv("student_depression_dataset.csv")   # harus ada di folder yang sama
+st.title("🧠 Mental Health Depression Prediction App")
+st.write("Silakan upload dataset (CSV) terlebih dahulu jika belum otomatis terbaca.")
 
 
-# ==========================
-# 🔧 PREPROCESSING FUNCTION
-# ==========================
+# ======================================================
+# 📌 STEP 1: LOAD DATASET (Auto / Manual Upload)
+# ======================================================
 
-def preprocess_input(data):
+csv_file = "student_depression_dataset.csv"
 
-    df_copy = df.copy()
+try:
+    df = pd.read_csv(csv_file)
+    st.success("📁 Dataset ditemukan otomatis!")
+except:
+    st.warning("⚠ Dataset tidak ditemukan. Upload file CSV di bawah ini.")
+    file_upload = st.file_uploader("Upload student_depression_dataset.csv", type=["csv"])
+    
+    if file_upload:
+        df = pd.read_csv(file_upload)
+        st.success("📁 Dataset berhasil diupload!")
+    else:
+        st.stop()  # berhenti sampai file ada
+
+
+# ======================================================
+# 📌 PREPROCESSING FUNCTION
+# ======================================================
+
+def preprocess(data, df_ref):
+
+    df_copy = df_ref.copy()
 
     # -------- Drop Columns --------
     drop_cols = ['Work Pressure', 'Job Satisfaction']
@@ -67,73 +82,54 @@ def preprocess_input(data):
 
     # Scaling
     scaler = StandardScaler()
-    feature_cols = df_input.columns
-    df_input[feature_cols] = scaler.fit_transform(df_input[feature_cols])
+    numeric_features = df_input.columns
+    df_input[numeric_features] = scaler.fit_transform(df_input[numeric_features])
 
     return df_input
 
 
+# ======================================================
+# 📌 TRAIN MODEL (Menggunakan dataset yg ada)
+# ======================================================
 
-# ==========================
-# 🚀 Load Model
-# ==========================
 model = RandomForestClassifier()
 model.fit(
-    preprocess_input(df.drop(columns=["Depression"])),
+    preprocess(df.drop(columns=["Depression"]).iloc[0].to_dict(), df),
     df["Depression"]
 )
 
 
-# ==========================
-# 🧠 STREAMLIT UI
-# ==========================
+# ======================================================
+# 📌 STREAMLIT INPUT FORM UI
+# ======================================================
 
-st.title("🩺 Mental Health Depression Prediction App")
-st.write("Masukkan data kamu lalu klik predict untuk melihat hasilnya.")
+st.subheader("🧾 Masukkan Data Anda")
+
+form = {}
+
+for col in df.columns:
+    if col == "Depression":
+        continue
+    elif df[col].dtype == "object":
+        form[col] = st.selectbox(col, sorted(df[col].dropna().unique()))
+    else:
+        form[col] = st.number_input(col, value=float(df[col].mean()))
 
 
-# Input Form
-gender = st.selectbox("Gender", df["Gender"].unique())
-city = st.selectbox("City", df["City"].unique())
-profession = st.selectbox("Profession", df["Profession"].unique())
-age = st.number_input("Age", min_value=10, max_value=80, step=1)
-cgpa = st.number_input("CGPA", min_value=0.0, max_value=4.0, step=0.1)
-hours = st.number_input("Work/Study Hours", min_value=0, max_value=20, step=1)
-sleep = st.selectbox("Sleep Duration", df["Sleep Duration"].unique())
-financial = st.selectbox("Financial Stress (1-5)", ["1.0", "2.0", "3.0", "4.0", "5.0"])
-diet = st.selectbox("Dietary Habits", df["Dietary Habits"].unique())
-degree = st.selectbox("Degree", df["Degree"].unique())
-social = st.selectbox("Social Weakness", df["Social Weakness"].unique())
-suicide = st.selectbox("Have suicidal thoughts?", ["Yes", "No"])
-history = st.selectbox("Family History of Mental Illness", ["Yes", "No"])
-academic = st.selectbox("Academic Pressure", df["Academic Pressure"].unique())
-satisfaction = st.selectbox("Study Satisfaction", df["Study Satisfaction"].unique())
-
+# ======================================================
+# 📌 PREDICT BUTTON
+# ======================================================
 
 if st.button("🔍 Predict"):
 
-    input_data = {
-        "Gender": gender,
-        "City": city,
-        "Profession": profession,
-        "Age": age,
-        "CGPA": cgpa,
-        "Work/Study Hours": hours,
-        "Sleep Duration": sleep,
-        "Dietary Habits": diet,
-        "Degree": degree,
-        "Social Weakness": social,
-        "Have you ever had suicidal thoughts ?": suicide,
-        "Financial Stress": financial,
-        "Family History of Mental Illness": history,
-        "Academic Pressure": academic,
-        "Study Satisfaction": satisfaction
-    }
+    processed = preprocess(form.copy(), df)
+    result = model.predict(processed)[0]
 
-    processed = preprocess_input(input_data)
-    prediction = model.predict(processed)[0]
-
-    if prediction == 1:
-        st.error("⚠️ Kamu menunjukkan indikasi depresi. Sebaiknya konsultasi dengan profesional.")
+    if result == 1:
+        st.error("⚠️ Kamu menunjukkan indikasi depresi. Pertimbangkan bantuan profesional.")
     else:
-        st.success("💚 Kamu tidak menunjukkan tanda depresi. Tetap jaga kesehatan mental ya!")
+        st.success("💚 Kamu tidak menunjukkan tanda depresi. Tetap jaga kesehatan mental!")
+
+
+st.write("---")
+st.caption("Model ini bukan diagnosis medis. Untuk kondisi serius, hubungi profesional kesehatan mental.")
